@@ -1,0 +1,211 @@
+meta:
+  id: go-llm-agent-checklist
+  version: 1.0
+  format: TOON
+  spec_version: 3.0
+  last_updated: 2026-01-18
+  scope: modern go development
+  audience: llm agent
+  usage: run as pre-change and pre-final gate
+
+contract:
+  verdict_values[2]: PASS,FAIL
+  severity_values[4]: hard,high,medium,low
+  required_report_fields[9]: verdict,failed_check_ids,fixes_applied,remaining_risks,commands_run,tests_run,lint_run,files_changed,notes
+  required_final_statement: produce a one line PASS or FAIL and list failed_check_ids
+
+workflow:
+  steps[6]{step,action,required_output}:
+    1,Restate goal and boundaries,goal_summary plus touched_packages
+    2,Select minimal design and dependencies,design_notes plus dependency_notes
+    3,Implement with idiomatic go patterns,patch plus doc_comments_if_needed
+    4,Run quality gates,commands_run plus outputs_summary
+    5,Write or update tests,tests_run plus coverage_notes_if_relevant
+    6,Finalize audit against hard_stops and sections,final_report with verdict
+
+hard_stop_triggers:
+  checks[15]{id,rule,detect,fix_hint}:
+    HS01,no ignored errors,search for assignments to blank identifier of error returns,handle error or justify with comment and test
+    HS02,no panic for normal flow,grep for panic usage outside init main truly fatal paths,return error and let caller decide
+    HS03,no unbounded goroutine spawning,review loops that spawn goroutines without limit,add worker pool or backpressure
+    HS04,every goroutine has stop condition,find goroutines lacking ctx done or channel close signal,add context cancellation or done channel
+    HS05,no mutable package globals for runtime state,scan for var holding state config caches,switch to injected dependency or constructor
+    HS06,exported api must not return unexported concrete types,inspect exported funcs returning lower case types,export type or return interface
+    HS07,context must be first param when used,scan signatures for ctx not first or missing,move ctx first and thread through
+    HS08,do not leak internal errors to clients,inspect http handlers for raw err messages,sanitize map to stable error codes
+    HS09,no mixed concerns in single model struct,check structs with db json validate tags combined,split into dto and persistence structs
+    HS10,new dependency must be justified and maintained,check go mod diff and github activity,prefer stdlib or replace with maintained lib
+    HS11,no double logging and returning same error,check logs at multiple layers,log at boundary or return with wrap not both
+    HS12,no select with single case unless timeout or default,scan select blocks with one case,replace with direct receive or add ctx timeout
+    HS13,no insecure string comparisons for auth,check auth compares using == on secrets,use constant time compare and proper libs
+    HS14,no resource leaks for files and bodies,check for missing Close calls,defer close and handle close errors when relevant
+    HS15,no tests that rely on time or randomness uncontrolled,scan tests for time sleep or rand without seed control,use fake clock or deterministic inputs
+
+sections:
+
+  S0_scope_intent:
+    goal: ensure change is scoped and measurable
+    checks[6]{id,severity,rule,verify,fix}:
+      S0C01,hard,goal stated in 1 to 2 sentences,read header comment or pr description,add concise goal statement
+      S0C02,high,affected packages identified,list touched packages and public apis,add touched_packages list
+      S0C03,high,success criteria defined,look for tests or observable outcomes,define expected behavior and tests
+      S0C04,medium,backwards compatibility assessed,review exported api and behavior changes,document breaking changes or avoid them
+      S0C05,medium,non goals are explicit,ensure no scope creep,add non_goals list
+      S0C06,low,performance impact considered,review hot paths and allocations,add note or benchmark if needed
+
+  S1_project_packages:
+    goal: keep package boundaries clean and idiomatic
+    checks[8]{id,severity,rule,verify,fix}:
+      S1C01,high,package names short and non stuttering,scan names and usage examples,rename package or adjust api
+      S1C02,high,avoid premature folder hierarchy,review new dirs and layers,flatten or group by feature
+      S1C03,high,export only what is needed,scan for new exported identifiers,make unexported unless required
+      S1C04,medium,zero value usable or documented,inspect new public types,adjust fields defaults or document constructor requirement
+      S1C05,medium,small interfaces near consumers,check for global interface package,move interface to consumer or split it
+      S1C06,medium,avoid god structs and god services,review types that aggregate many deps,split into focused components
+      S1C07,low,avoid init for non trivial work,search init functions,move to explicit setup in main or constructors
+      S1C08,low,avoid circular package deps,run go list or build and inspect imports,refactor interfaces or move shared code
+
+  S2_dependencies_modules:
+    goal: keep dependencies minimal and healthy
+    checks[7]{id,severity,rule,verify,fix}:
+      S2C01,hard,go mod tidy clean,run go mod tidy and check diff,commit tidy results
+      S2C02,high,new dependency justification written,check pr notes for why stdlib not enough,add rationale and alternatives
+      S2C03,high,dependency is actively maintained,check releases commits issue activity,choose alternative or vendor decision documented
+      S2C04,medium,prefer stdlib when sufficient,review added libs for small helpers,replace with stdlib implementation
+      S2C05,medium,avoid heavy magic abstractions,review reflection heavy orm or config,prefer explicit code or lighter libs
+      S2C06,low,licenses compatible,check dependency license,replace or document approval
+      S2C07,low,version pins are intentional,review indirect upgrades,document or constrain if needed
+
+  S3_format_style_readability:
+    goal: consistent style and clear control flow
+    checks[9]{id,severity,rule,verify,fix}:
+      S3C01,hard,gofmt applied,run gofmt on changed files,apply gofmt
+      S3C02,medium,gofumpt if repo uses it,check repo tooling or ci,run gofumpt
+      S3C03,medium,common initialisms consistent,scan identifiers for Http Id Url,rename to HTTP ID URL style
+      S3C04,medium,error strings lower case no punctuation,scan new errors,adjust message text
+      S3C05,medium,exported items have doc comments,run golint style check or manual scan,add proper comments
+      S3C06,medium,avoid deep nesting for errors,inspect functions for pyramids,return early and keep happy path flat
+      S3C07,low,no redundant break or return,scan switch and void funcs,remove redundant statements
+      S3C08,low,avoid clever one liners,inspect for opaque constructs,refactor to clear steps
+      S3C09,low,use helper functions not manual loops,scan for manual slice copy or append loops,use append slice or copy built in
+
+  S4_errors:
+    goal: robust error discipline and propagation
+    checks[9]{id,severity,rule,verify,fix}:
+      S4C01,hard,no ignored errors,search for underscore on error returns,handle or justify with comment
+      S4C02,hard,no panic for expected errors,scan for panic in library code,return error and wrap
+      S4C03,high,wrap errors with context when propagating,inspect returns with fmt errorf without wrap,use percent w wrapping
+      S4C04,high,use errors is and as not string compare,scan for err string checks,replace with errors is or typed errors
+      S4C05,medium,sentinel errors exported only when needed,review exported Err vars,keep internal or document contract
+      S4C06,medium,do not log and return same error repeatedly,inspect logs on error paths,log at boundary only
+      S4C07,medium,close errors handled where meaningful,check deferred close for important resources,log or join close errors
+      S4C08,low,error messages include actionable context,review messages for ambiguity,include operation and key id
+      S4C09,low,prefer typed errors for structured handling,review branching needs,create error type with unwrap if needed
+
+  S5_concurrency_context:
+    goal: safe concurrency and proper cancellation
+    checks[12]{id,severity,rule,verify,fix}:
+      S5C01,hard,goroutines have bounded lifetime,inspect go statements for stop path,add ctx done or done channel
+      S5C02,hard,request scoped work threads ctx,ensure ctx passed through to calls,add ctx param and propagate
+      S5C03,high,avoid unbounded goroutine spawn in loops,review fan out patterns,add worker pool or semaphore
+      S5C04,high,shared mutable state protected or owned,scan for shared maps slices counters,add mutex or ownership via channel
+      S5C05,high,avoid goroutine leaks on channel ops,check receives sends without cancellation,add select on ctx done
+      S5C06,medium,channels used for orchestration not for simple locks,review channel patterns,prefer mutex for simple state
+      S5C07,medium,avoid select single case,scan select blocks,replace with direct op unless timeout
+      S5C08,medium,correct loop variable capture in closures,scan goroutines inside loops,assign loop vars to locals
+      S5C09,medium,use waitgroup for lifecycle when needed,review concurrency completion paths,add waitgroup and done signals
+      S5C10,low,buffer sizes intentional,review channel make calls,document or adjust buffer
+      S5C11,low,avoid context stored in structs,scan struct fields for ctx,pass ctx explicitly
+      S5C12,low,race detector considered,ensure go test race used for concurrency changes,run race in ci or locally
+
+  S6_http_api_services:
+    goal: correct and secure http services
+    checks[10]{id,severity,rule,verify,fix}:
+      S6C01,high,handlers are thin and call service layer,inspect handler body size,extract domain logic
+      S6C02,high,request body closed and bounded,check for defer body close and max size,add close and max bytes reader
+      S6C03,high,server and client timeouts set,inspect http server client config,set read write idle and client timeout
+      S6C04,high,input validated and errors mapped to stable codes,inspect validation and responses,add validator and consistent error response
+      S6C05,medium,no internal error details exposed,review response bodies on error,return generic message and log details
+      S6C06,medium,middleware order intentional,inspect chain auth logging recovery,adjust ordering and document
+      S6C07,medium,pagination and limits enforced,review list endpoints,add limit defaults and max
+      S6C08,low,context used in outbound calls,check http client do uses req with ctx,attach ctx to requests
+      S6C09,low,graceful shutdown implemented,check main for shutdown signals,add server shutdown with context
+      S6C10,low,structured logging includes request ids,review logs,add request id fields
+
+  S7_data_persistence:
+    goal: safe and observable data access
+    checks[9]{id,severity,rule,verify,fix}:
+      S7C01,high,parameterized queries only,scan for string concat in sql,use placeholders and args
+      S7C02,high,db calls use context,check querycontext execcontext usage,thread ctx through
+      S7C03,high,pooling configured if using database sql,inspect setmaxopenconns etc,set sane defaults
+      S7C04,medium,transaction patterns correct,check defer rollback and commit errors,implement standard tx pattern
+      S7C05,medium,migrations updated when schema changes,check migrations directory,add migration and tests
+      S7C06,medium,avoid leaking db models to api,inspect structs used in handlers,add dto mapping
+      S7C07,low,scan rows errors handled,ensure rows err checked,check rows err and close
+      S7C08,low,caching has eviction strategy,review map caches or redis ttl,set ttl or size bound
+      S7C09,low,idempotency considered for retries,review message handlers or http post,add idempotency key handling
+
+  S8_observability:
+    goal: logs metrics traces enable debugging
+    checks[7]{id,severity,rule,verify,fix}:
+      S8C01,medium,structured logging used consistently,inspect log calls,use slog or zap fields not string concat
+      S8C02,medium,no secrets or pii in logs,scan log fields,redact and remove
+      S8C03,medium,errors logged with context at boundary,review error logs,log once with fields
+      S8C04,low,metrics or traces for critical paths,review service endpoints,add counters histograms or spans
+      S8C05,low,pprof available in safe environments,check debug endpoints,add behind auth or build tag
+      S8C06,low,log levels appropriate,review info debug usage,adjust level
+      S8C07,low,correlation id propagation,check request id across services,propagate header and log field
+
+  S9_testing:
+    goal: correctness and regression protection
+    checks[12]{id,severity,rule,verify,fix}:
+      S9C01,hard,tests added or updated for behavior change,check diff includes tests,add unit tests or integration tests
+      S9C02,high,cover success and failure paths,review test cases,add failure case assertions
+      S9C03,high,table driven tests for variants,check repeated tests,refactor to table driven
+      S9C04,high,race test for concurrency change,run go test race,add to ci and fix races
+      S9C05,medium,mocks via small interfaces not global hacks,inspect mocking approach,use interface and manual mock or gomock
+      S9C06,medium,tests deterministic no sleep,scan for time sleep and real time,inject clock or use timeouts only for waits
+      S9C07,medium,no network in unit tests,check tests for external calls,stub or mark integration
+      S9C08,low,benchmark added for perf claims,check for benchmark when claiming faster,add go test bench
+      S9C09,low,fuzz test considered for parsers,review input handling,add fuzz for risky parsers
+      S9C10,low,golden tests for stable formats,review serializers output,add golden files
+      S9C11,low,coverage not gamed,ensure meaningful assertions,improve assertions
+      S9C12,low,test names and subtests readable,check t run names,improve naming
+
+  S10_security_performance:
+    goal: avoid obvious security and perf pitfalls
+    checks[10]{id,severity,rule,verify,fix}:
+      S10C01,high,secrets not in repo or configs,scan for tokens keys,move to env and rotate
+      S10C02,high,auth uses constant time compare for secrets,check compares,use crypto subtle
+      S10C03,medium,input size limits and parsing safety,review json decode and body size,set decoder limits and max bytes
+      S10C04,medium,avoid unbounded caches and maps,review in memory structures,add ttl or max size
+      S10C05,medium,avoid defer in tight loops,review loops,defer outside loop or manual close
+      S10C06,medium,pointers vs values chosen appropriately,review large struct passing,pass pointer if heavy copy
+      S10C07,low,allocations reduced in hot paths,review conversions and fmt,preallocate slices and avoid fmt in loops
+      S10C08,low,errors and logs not too chatty,review high qps logs,add sampling or reduce
+      S10C09,low,security lint not newly violated,run gosec if in toolchain,fix findings or document false positives
+      S10C10,low,dependency vulns considered,run vuln check if available,update or mitigate
+
+recommended_commands:
+  commands[10]:
+    gofmt ./...
+    go test ./...
+    go test -race ./...
+    go test -run TestName ./path
+    go test -bench . ./...
+    go vet ./...
+    golangci-lint run ./...
+    go mod tidy
+    go list ./...
+    go version
+
+agent_report_template:
+  verdict: PASS
+  failed_check_ids[0]:
+  fixes_applied[0]:
+  remaining_risks[0]:
+  commands_run[0]:
+  tests_run[0]:
+  lint_run[0]:
+  files_changed[0]:
+  notes: none
